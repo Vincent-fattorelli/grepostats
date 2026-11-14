@@ -89,6 +89,16 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
 .evt{font-size:12px;margin:-4px 0 10px;padding:6px 10px;border-left:3px solid #e11d48;background:var(--hover);border-radius:4px}
 .cmpgrille td:first-child{color:var(--mut)}
 #mRetour{margin-bottom:8px}
+.badge.caillou{background:#8a6a45;border-color:#8a6a45;color:#fff}
+.badge.hors{color:var(--mut)}
+.seg.filtres{flex-wrap:wrap;margin-bottom:8px}
+.seg.filtres button{font-size:12px}
+.props{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.props button{display:inline-flex;gap:6px;align-items:center;font-size:13px}
+.alerte{padding:8px 10px;border-left:3px solid #d97706;background:var(--hover);border-radius:4px;margin:0 0 10px;font-size:13px}
+.retirer{border:0;background:none;color:var(--mut);padding:2px 6px}
+.retirer:hover{color:#dc2626;background:none}
+#page-simulateur .controles input[type=search]{max-width:none}
 </style>
 </head>
 <body>
@@ -100,6 +110,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   <a href="#domination" class="actif">Domination</a>
   <a href="#classements">Classements</a>
   <a href="#comparer">Comparer</a>
+  <a href="#simulateur">Créer une alliance</a>
 </nav>
 <div class="page" id="page-domination">
 <main>
@@ -175,6 +186,24 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   <section class="panneau pleine">
     <div class="controles" id="cmpSel"></div>
     <div id="cmpCorps"></div>
+  </section>
+</div>
+
+<div class="page" id="page-simulateur" hidden>
+  <section class="panneau pleine">
+    <div class="controles">
+      <input type="search" id="simRech" placeholder="Ajouter un joueur : tape son nom…" autocomplete="off">
+      <select id="simAll"></select>
+    </div>
+    <div class="props" id="simProps"></div>
+    <div class="controles">
+      <label for="simMax">Taille max</label>
+      <input type="number" id="simMax" min="1" max="999">
+      <span class="mut petit" id="simMaxAide"></span>
+      <button id="simLien">Copier le lien</button>
+      <button id="simVider">Tout retirer</button>
+    </div>
+    <div id="simCorps"></div>
   </section>
 </div>
 
@@ -354,10 +383,11 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
       });
       ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
     }
-    if (jSel) {
+    if (jSel || simCarte) {
+      var simS = simCarte ? simEnsemble() : null;
       ctx.lineWidth = 2; ctx.strokeStyle = "#e11d48";
       for (var k = 0; k < V.length; k++) {
-        if (V[k].j !== jSel) continue;
+        if (simS ? !simS.has(V[k].j) : V[k].j !== jSel) continue;
         var q = ecran(V[k].px, V[k].py);
         ctx.beginPath(); ctx.arc(q[0], q[1], rd + 4, 0, 6.2832); ctx.stroke();
       }
@@ -661,10 +691,11 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   }
   function majChip() {
     var c = $("chipJ");
-    c.hidden = !jSel;
-    if (jSel) c.textContent = "Mis en avant : " + jSel + " ✕";
+    c.hidden = !jSel && !simCarte;
+    if (simCarte) c.textContent = "Ton alliance simulée (" + SIM.noms.length + " joueurs) ✕";
+    else if (jSel) c.textContent = "Mis en avant : " + jSel + " ✕";
   }
-  $("chipJ").addEventListener("click", function () { jSel = null; tout(); });
+  $("chipJ").addEventListener("click", function () { jSel = null; simCarte = false; tout(); });
   function tout() { zonesSale = true; majChip(); dessiner(); legende(); rendreOnglet(); }
 
   function reglerRayon(r) {
@@ -781,8 +812,72 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     d: function (v) { return v.d; },
     zone: function (v) { return v.dom === 1 ? (v.d <= rayon ? 0 : 1) : 2; },
     o: function (v) { return v.o; },
-    t: function (v) { return v.t; }
+    t: function (v) { return v.t; },
+    j: function (v) { return v.j; }
   };
+
+  // ---------- Statut d'une ville pour la domination
+  //   compte  : île de domination dans le rayon choisi
+  //   hors    : île de domination, mais plus loin que le rayon
+  //   caillou : île dont le type ne compte pas pour la domination (même au centre)
+  var STATUTS = { compte: "Compte", hors: "Hors rayon", caillou: "Caillou" };
+  var TITRES_ST = {
+    compte: "Île de domination dans le rayon choisi : compte pour la domination",
+    hors: "Île de domination, mais plus loin que le rayon choisi",
+    caillou: "Type d'île qui ne compte pas pour la domination, même au centre"
+  };
+  function statut(v) { return v.dom !== 1 ? "caillou" : v.d <= rayon ? "compte" : "hors"; }
+  function badgeStatut(v) {
+    var s = statut(v);
+    return '<span class="badge ' + (s === "compte" ? "ok" : s) + '" title="' + TITRES_ST[s] + '">' + STATUTS[s] + "</span>";
+  }
+  function compterStatuts(villes) {
+    var n = { tous: villes.length, compte: 0, hors: 0, caillou: 0 };
+    villes.forEach(function (v) { n[statut(v)]++; });
+    n.inutiles = n.hors + n.caillou;
+    return n;
+  }
+  var PAR_ALLIANCE = new Map();
+  TOUTES.forEach(function (v) {
+    if (v.j.charAt(0) === "(") return;
+    if (!PAR_ALLIANCE.has(v.a)) PAR_ALLIANCE.set(v.a, []);
+    PAR_ALLIANCE.get(v.a).push(v);
+  });
+
+  // Tableau de villes avec filtres (toutes / comptent / hors rayon / cailloux / inutiles) et tri par colonne.
+  // `et` porte l'état : { tri, sens, filtre }. Les clics sont gérés par le conteneur (data-tri, data-fv).
+  var MAX_LIGNES_VILLES = 50;
+  function htmlVilles(villes, et, avecJoueur) {
+    var n = compterStatuts(villes), filtre = et.filtre || "tous";
+    var liste = villes.filter(function (v) {
+      var s = statut(v);
+      return filtre === "tous" || (filtre === "inutiles" ? s !== "compte" : s === filtre);
+    });
+    var h = '<div class="seg filtres">';
+    [["tous", "Toutes"], ["compte", "Comptent"], ["hors", "Hors rayon"], ["caillou", "Cailloux"], ["inutiles", "Inutiles"]].forEach(function (f) {
+      h += '<button data-fv="' + f[0] + '" class="' + (filtre === f[0] ? "actif" : "") + '">' + f[1] + " <small>" + fmt(n[f[0]]) + "</small></button>";
+    });
+    h += "</div>";
+    if (filtre === "inutiles" || filtre === "caillou") h += '<p class="mut petit" style="margin:0 0 8px">' + (filtre === "caillou"
+      ? "Cailloux : villes sur un type d'île qui ne compte jamais pour la domination, même au centre de la carte."
+      : "Inutiles : villes qui ne comptent pas pour la domination au rayon de " + rayon + " (hors rayon ou sur un caillou).") + "</p>";
+    if (!liste.length) return h + '<p class="vide mut">Aucune ville.</p>';
+    var tri = et.tri || "zone", sens = et.sens || 1;
+    function th(lib, cle, num) {
+      return '<th data-tri="' + cle + '" class="' + (num ? "n" : "") + '">' + lib + (tri === cle ? (sens > 0 ? " ▲" : " ▼") : "") + "</th>";
+    }
+    h += '<div style="overflow-x:auto"><table class="cls"><thead><tr>' + th("Ville", "n") + (avecJoueur ? th("Joueur", "j") : "") +
+      th("Position", "pos", 1) + th("Mer", "mer", 1) + th("Points", "p", 1) + th("Distance", "d", 1) + th("Statut", "zone") + "</tr></thead><tbody>";
+    var limite = et.tout ? Infinity : MAX_LIGNES_VILLES;
+    trier(liste, tri, sens).slice(0, limite).forEach(function (v) {
+      h += "<tr><td>" + esc(v.n) + "</td>" + (avecJoueur ? "<td>" + nomJ(v.j) + "</td>" : "") + '<td class="n">' + v.x + ":" + v.y +
+        '</td><td class="n">' + mer(v) + '</td><td class="n">' + fmt(v.p || 0) + '</td><td class="n">' + fmt(v.d, 1) + "</td><td>" + badgeStatut(v) + "</td></tr>";
+    });
+    h += "</tbody></table></div>";
+    if (liste.length > limite) h += '<p class="mut petit" style="margin-top:8px">' + fmt(limite) + " villes affichées sur " + fmt(liste.length) +
+      ' · <button data-fv-tout="1">Tout afficher</button></p>';
+    return h;
+  }
   function trier(liste, cle, sens) {
     var f = TRIS[cle];
     return liste.slice().sort(function (a, b) {
@@ -812,7 +907,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
       h += "<span>Points : <b>" + fmt(info.p) + "</b> (rang " + fmt(info.rg) + ")</span>";
       if (info.pa != null) h += "<span>Combat : <b>" + fmt(info.pa) + "</b> · att. " + valCls(info.pt) + " · déf. " + valCls(info.pd) + "</span>";
     }
-    h += "<span><b>" + nDom + "</b> sur îles de domination (<b>" + nRay + "</b> dans le rayon de " + rayon + ")</span>";
+    h += "<span><b>" + nDom + "</b> sur îles de domination (<b>" + nRay + "</b> dans le rayon de " + rayon + ") · <b>" + (villes.length - nDom) + "</b> sur cailloux</span>";
     var nFond = villes.length - nPrises;
     h += "<span><b>" + nPrises + "</b> prise" + (nPrises > 1 ? "s" : "") + " · <b>" + nFond + "</b> fondée" + (nFond > 1 ? "s" : "") + "</span></div>";
     if (mersTxt) h += '<p class="mut petit" style="margin:0 0 10px">' + mersTxt + "</p>";
@@ -823,11 +918,9 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
       return '<th data-tri="' + cle + '" class="' + (num ? "n" : "") + '">' + lib + (mj.tri === cle ? (mj.sens > 0 ? " ▲" : " ▼") : "") + "</th>";
     }
     h += '<div style="overflow-x:auto"><table class="cls"><thead><tr>' + th("Ville", "n") + th("Position", "pos", 1) + th("Mer", "mer", 1) +
-      th("Points", "p", 1) + th("Distance", "d", 1) + th("Zone", "zone") + th("Ancien propriétaire", "o") + th("Pris le", "t") + "</tr></thead><tbody>";
+      th("Points", "p", 1) + th("Distance", "d", 1) + th("Statut", "zone") + th("Ancien propriétaire", "o") + th("Pris le", "t") + "</tr></thead><tbody>";
     trier(villes, mj.tri, mj.sens).forEach(function (v) {
-      var zone = v.dom === 1
-        ? '<span class="badge' + (v.d <= rayon ? " ok" : "") + '">Domination' + (v.d <= rayon ? " · dans le rayon" : "") + "</span>"
-        : '<span class="mut">–</span>';
+      var zone = badgeStatut(v);
       var anc = v.o != null ? nomJ(v.o) + ' <span class="mut petit">(' + esc(v.oa) + ")</span>"
         : '<span class="mut" title="Aucune conquête enregistrée pour cette ville">Fondée</span>';
       h += "<tr><td>" + esc(v.n) + '</td><td class="n">' + v.x + ":" + v.y + '</td><td class="n">' + mer(v) + '</td><td class="n">' +
@@ -893,27 +986,37 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     var membres = (CLS.joueurs || []).filter(function (x) { return x.a === nom; }).map(function (x) {
       return { x: x, dom: domJ.get(x.n) || 0 };
     }).sort(function (a, b) { return b.dom - a.dom || (b.x.v || 0) - (a.x.v || 0) || (b.x.p || 0) - (a.x.p || 0); });
+    var villesA = PAR_ALLIANCE.get(nom) || [], ns = compterStatuts(villesA);
     h += "<h3>Membres <span class='mut petit'>(triés par villes de domination dans le rayon)</span></h3>";
-    if (!membres.length) return void ($("mCorps").innerHTML = h + '<p class="vide mut">Aucun membre.</p>');
-    h += '<div style="overflow-x:auto"><table class="cls"><thead><tr><th>Joueur</th><th class="n">Domination (rayon)</th><th class="n">Villes</th><th class="n">Points</th><th class="n">Combat</th><th class="n">Attaque</th><th class="n">Défense</th></tr></thead><tbody>';
-    membres.forEach(function (m) {
-      h += "<tr><td>" + nomJ(m.x.n) + '</td><td class="n"><b>' + m.dom + '</b></td><td class="n">' + valCls(m.x.v) + '</td><td class="n">' + valCls(m.x.p) +
-        '</td><td class="n">' + valCls(m.x.pa) + '</td><td class="n">' + valCls(m.x.pt) + '</td><td class="n">' + valCls(m.x.pd) + "</td></tr>";
-    });
-    $("mCorps").innerHTML = h + "</tbody></table></div>";
+    if (!membres.length) h += '<p class="vide mut">Aucun membre.</p>';
+    else {
+      h += '<div style="overflow-x:auto"><table class="cls"><thead><tr><th>Joueur</th><th class="n">Domination (rayon)</th><th class="n">Villes</th><th class="n">Inutiles</th><th class="n">Points</th><th class="n">Combat</th><th class="n">Attaque</th><th class="n">Défense</th></tr></thead><tbody>';
+      membres.forEach(function (m) {
+        var inut = compterStatuts(PAR_JOUEUR.get(m.x.n) || []).inutiles;
+        h += "<tr><td>" + nomJ(m.x.n) + '</td><td class="n"><b>' + m.dom + '</b></td><td class="n">' + valCls(m.x.v) + '</td><td class="n">' + inut + '</td><td class="n">' + valCls(m.x.p) +
+          '</td><td class="n">' + valCls(m.x.pa) + '</td><td class="n">' + valCls(m.x.pt) + '</td><td class="n">' + valCls(m.x.pd) + "</td></tr>";
+      });
+      h += "</tbody></table></div>";
+    }
+    h += "<h3>Villes <span class='mut petit'>(" + fmt(ns.compte) + " comptent · " + fmt(ns.hors) + " hors rayon · " + fmt(ns.caillou) + " sur cailloux)</span></h3>";
+    h += htmlVilles(villesA, vueModal, true);
+    $("mCorps").innerHTML = h;
   }
 
   // ---------- Comparateur d'alliances
-  var CMPCOL = ["#0072B2", "#D55E00", "#009E73"];
+  var CMPCOL = ["#0072B2", "#D55E00", "#009E73"], CMPCOL_DEF = CMPCOL;
   var cmp = null;
   function cmpInit() { if (!cmp) cmp = ordre.filter(function (n) { return INFO_A.has(n); }).slice(0, 3); }
   function cmpAjouter(n) { cmpInit(); if (cmp.indexOf(n) < 0) { if (cmp.length >= 3) cmp.shift(); cmp.push(n); } }
-  function svgCmp(noms) {
+  // `cle` (facultatif) : à quelle « alliance » compter une ville (sert au simulateur) ; `cols` : couleurs des courbes.
+  function svgCmp(noms, cle, cols) {
+    cle = cle || function (v) { return v.a; };
+    var CMPCOL = cols || CMPCOL_DEF;
     var xs = []; for (var r = M.rayon_min; r <= M.rayon_max; r += 2) xs.push(r);
     var cum = {}, ser = {}, tot = 0, i = 0, ymax = 10;
     noms.forEach(function (n) { cum[n] = 0; ser[n] = []; });
     xs.forEach(function (r) {
-      while (i < V.length && V[i].d <= r) { tot++; if (cum.hasOwnProperty(V[i].a)) cum[V[i].a]++; i++; }
+      while (i < V.length && V[i].d <= r) { tot++; var k = cle(V[i]); if (cum.hasOwnProperty(k)) cum[k]++; i++; }
       noms.forEach(function (n) { var y = tot ? 100 * cum[n] / tot : 0; ser[n].push(y); if (y > ymax) ymax = y; });
     });
     ymax = Math.min(100, Math.ceil(ymax / 10) * 10);
@@ -985,17 +1088,218 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     Array.prototype.forEach.call($("cmpSel").querySelectorAll("select"), function (s) { if (s.value && v.indexOf(s.value) < 0) v.push(s.value); });
     cmp = v; comparer();
   });
+  // ---------- Simulateur : créer une alliance avec les joueurs de son choix
+  var SIMK = "\u0000sim", SIM_NOM = "Ton alliance", SIM_COL = "#e11d48";
+  var MAX_DEF = Math.max.apply(null, (CLS.alliances || []).map(function (a) { return a.m || 0; }).concat([1]));
+  var CLE_SIM = "grepostats-sim-" + M.monde;
+  var SIM = { noms: [], max: MAX_DEF, tri: "zone", sens: 1, filtre: "tous", msg: "" };
+  var simCarte = false;
+  try {
+    var simLu = JSON.parse(localStorage.getItem(CLE_SIM) || "null");
+    if (simLu) { SIM.noms = (simLu.noms || []).filter(function (n) { return INFO_J.has(n); }); SIM.max = simLu.max || MAX_DEF; }
+  } catch (e) { /* stockage indisponible : on repart de zéro */ }
+  function simSauver() { try { localStorage.setItem(CLE_SIM, JSON.stringify({ noms: SIM.noms, max: SIM.max })); } catch (e) { } }
+  function simEnsemble() { return new Set(SIM.noms); }
+
+  function simAjouter(noms) {
+    var nouveaux = noms.filter(function (n) { return INFO_J.has(n) && SIM.noms.indexOf(n) < 0; });
+    var places = Math.max(0, SIM.max - SIM.noms.length);
+    SIM.noms = SIM.noms.concat(nouveaux.slice(0, places));
+    var refus = nouveaux.length - Math.min(places, nouveaux.length);
+    SIM.msg = refus ? refus + " joueur" + (refus > 1 ? "s" : "") + " non ajouté" + (refus > 1 ? "s" : "") + " : l'alliance est pleine (" + SIM.max + " max)." : "";
+    simSauver(); simPropositions(); simulateur();
+  }
+  function simPropositions() {
+    var q = norm($("simRech").value.trim()), el = $("simProps");
+    if (!q) { el.innerHTML = ""; return; }
+    var S = simEnsemble();
+    var res = (CLS.joueurs || []).filter(function (x) { return !S.has(x.n) && norm(x.n).indexOf(q) >= 0; })
+      .sort(function (a, b) { return (norm(b.n).indexOf(q) === 0) - (norm(a.n).indexOf(q) === 0) || (b.p || 0) - (a.p || 0); })
+      .slice(0, 12);
+    el.innerHTML = res.length ? res.map(function (x) {
+      return '<button data-ajout="' + esc(x.n) + '">+ <b>' + esc(x.n) + '</b> <span class="mut petit">' + esc(x.a) + " · " + fmt(x.v || 0) + " villes · " + fmt(x.p || 0) + " pts</span></button>";
+    }).join("") : '<span class="mut petit">Aucun joueur trouvé (ou déjà ajouté).</span>';
+  }
+
+  function simulateur() {
+    $("simMax").value = SIM.max;
+    $("simMaxAide").textContent = "(par défaut : la plus grande alliance actuelle du monde, " + MAX_DEF + " membres ; à ajuster selon les règles du monde)";
+    var el = $("simCorps");
+    var h = SIM.msg ? '<p class="alerte">' + esc(SIM.msg) + "</p>" : "";
+    if (SIM.noms.length > SIM.max) h += '<p class="alerte">' + SIM.noms.length + " joueurs pour " + SIM.max + " places : retire-en " + (SIM.noms.length - SIM.max) + ".</p>";
+    if (!SIM.noms.length) {
+      el.innerHTML = h + '<p class="vide mut">Ajoute des joueurs avec la recherche ci-dessus (ou tous les membres d\'une alliance d\'un coup) : leurs villes sont regroupées dans une alliance fictive, et tout est recalculé comme si elle existait.</p>';
+      return;
+    }
+    var S = simEnsemble();
+    var membres = SIM.noms.map(function (n) { return { x: INFO_J.get(n), villes: PAR_JOUEUR.get(n) || [] }; });
+    var villes = [];
+    membres.forEach(function (m) { villes = villes.concat(m.villes); });
+    var ns = compterStatuts(villes);
+
+    // Totaux de l'alliance simulée
+    var tot = { n: SIM_NOM, m: membres.length, p: 0, v: 0, pa: 0, pt: 0, pd: 0 };
+    membres.forEach(function (m) { ["p", "v", "pa", "pt", "pd"].forEach(function (k) { tot[k] += m.x[k] || 0; }); });
+
+    // Les autres alliances, sans les joueurs qu'on leur a pris
+    var adj = new Map();
+    (CLS.alliances || []).forEach(function (a) { adj.set(a.n, { n: a.n, m: a.m, p: a.p, v: a.v, pa: a.pa, pt: a.pt, pd: a.pd }); });
+    membres.forEach(function (m) {
+      var a = adj.get(m.x.a); if (!a) return;
+      a.m -= 1;
+      ["p", "v", "pa", "pt", "pd"].forEach(function (k) { if (a[k] != null) a[k] -= m.x[k] || 0; });
+    });
+
+    // Domination au rayon choisi, les villes des joueurs choisis passant dans l'alliance simulée
+    var cle = function (v) { return S.has(v.j) ? SIMK : v.a; };
+    var cpt = new Map(), total = 0;
+    for (var i = 0; i < V.length && V[i].d <= rayon; i++) { var k = cle(V[i]); cpt.set(k, (cpt.get(k) || 0) + 1); total++; }
+    var clsDom = Array.from(cpt.entries()).filter(function (e) { return !SPECIAL[e[0]]; }).sort(function (a, b) { return b[1] - a[1]; });
+    var domSim = cpt.get(SIMK) || 0, pctSim = total ? 100 * domSim / total : 0;
+    var rangDom = clsDom.findIndex(function (e) { return e[0] === SIMK; }) + 1;
+    var rangPts = 1 + Array.from(adj.values()).filter(function (a) { return a.m > 0 && (a.p || 0) > tot.p; }).length;
+    var rivaux = clsDom.filter(function (e) { return e[0] !== SIMK; }).slice(0, 3).map(function (e) { return e[0]; });
+
+    var mers = {};
+    villes.forEach(function (v) { if (statut(v) === "compte") { var mm = mer(v); mers[mm] = (mers[mm] || 0) + 1; } });
+
+    h += '<div class="chips">' +
+      "<span><b>" + membres.length + "</b> / " + SIM.max + " membres</span>" +
+      "<span>Points : <b>" + fmt(tot.p) + "</b> (serait <b>" + rangPts + "<sup>e</sup></b>)</span>" +
+      "<span>Domination au rayon " + rayon + " : <b>" + fmt(domSim) + "</b> villes · <b>" + fmt(pctSim, 1) + " %</b>" + (rangDom ? " (serait <b>" + rangDom + "<sup>e</sup></b>)" : "") + "</span>" +
+      "<span><b>" + fmt(tot.v) + "</b> villes : " + fmt(ns.compte) + " comptent · " + fmt(ns.hors) + " hors rayon · " + fmt(ns.caillou) + " cailloux</span>" +
+      "<span>Combat : <b>" + fmt(tot.pa) + "</b> · att. " + fmt(tot.pt) + " · déf. " + fmt(tot.pd) + "</span></div>";
+    var mt = mersTexte(mers, 8);
+    if (mt) h += '<p class="mut petit" style="margin:0 0 10px">Domination par mer : ' + mt + "</p>";
+    h += '<p style="margin:0 0 12px"><button id="simCarte">Voir sur la carte</button> <span class="mut petit">Rayon réglable sur la page Domination.</span></p>';
+
+    // Comparaison avec les 3 premières alliances (une fois privées des joueurs choisis)
+    var cols = [{ n: SIM_NOM, x: tot, dom: domSim, inut: ns.inutiles }].concat(rivaux.map(function (n) {
+      var vs = (PAR_ALLIANCE.get(n) || []).filter(function (v) { return !S.has(v.j); });
+      return { n: n, x: adj.get(n) || { n: n }, dom: cpt.get(n) || 0, inut: compterStatuts(vs).inutiles };
+    }));
+    var LIG = [
+      ["Membres", function (c) { return c.x.m; }],
+      ["Points", function (c) { return c.x.p; }],
+      ["Villes", function (c) { return c.x.v; }],
+      ["Villes de domination (rayon " + rayon + ")", function (c) { return c.dom; }],
+      ["Part de la domination (%)", function (c) { return total ? 100 * c.dom / total : 0; }, 1],
+      ["Domination par membre", function (c) { return c.x.m ? c.dom / c.x.m : null; }, 2],
+      ["Villes inutiles (hors rayon + cailloux)", function (c) { return c.inut; }, 0, true],
+      ["Points de combat", function (c) { return c.x.pa; }],
+      ["Attaque", function (c) { return c.x.pt; }],
+      ["Défense", function (c) { return c.x.pd; }]
+    ];
+    h += "<h3>Face aux 3 premières alliances <span class='mut petit'>(sans les joueurs que tu leur prends)</span></h3>";
+    h += '<div style="overflow-x:auto"><table class="cmpgrille"><thead><tr><th></th>' + cols.map(function (c, q) {
+      return '<th class="n" style="font-size:13px;color:' + (q ? CMPCOL[q - 1] : SIM_COL) + '">' + esc(c.n) + (q ? ficheA(c.n) : "") + "</th>";
+    }).join("") + "</tr></thead><tbody>";
+    LIG.forEach(function (l) {
+      var vals = cols.map(l[1]), ok = vals.filter(function (v) { return v != null; });
+      var best = ok.length ? (l[3] ? Math.min.apply(null, ok) : Math.max.apply(null, ok)) : null;
+      h += "<tr><td>" + l[0] + "</td>" + vals.map(function (v) {
+        if (v == null) return '<td class="n mut">–</td>';
+        var txt = fmt(v, l[2] || 0);
+        return '<td class="n">' + (v === best ? '<b class="gagne">' + txt + "</b>" : txt) + "</td>";
+      }).join("") + "</tr>";
+    });
+    h += "</tbody></table></div>";
+    h += "<h3>Part de la domination selon le rayon</h3>" + svgCmp([SIMK].concat(rivaux), cle, [SIM_COL].concat(CMPCOL)) +
+      '<div class="legende">' + [SIM_NOM].concat(rivaux).map(function (n, q) {
+        return '<span style="cursor:default"><span class="pastille" style="background:' + (q ? CMPCOL[q - 1] : SIM_COL) + '"></span>' + esc(n) + "</span>";
+      }).join("") + "</div>";
+
+    // Membres
+    var lignes = membres.map(function (m) {
+      var c = compterStatuts(m.villes);
+      return { x: m.x, c: c };
+    }).sort(function (a, b) { return b.c.compte - a.c.compte || (b.x.p || 0) - (a.x.p || 0); });
+    h += "<h3>Membres <span class='mut petit'>(triés par villes qui comptent)</span></h3>";
+    h += '<div style="overflow-x:auto"><table class="cls"><thead><tr><th>Joueur</th><th>Alliance actuelle</th><th class="n">Comptent</th><th class="n">Hors rayon</th><th class="n">Cailloux</th><th class="n">Villes</th><th class="n">Points</th><th class="n">Combat</th><th></th></tr></thead><tbody>';
+    lignes.forEach(function (l) {
+      h += "<tr><td>" + nomJ(l.x.n) + '</td><td><div class="nom">' + pastille(l.x.a) + lienA(l.x.a) + '</div></td><td class="n"><b>' + l.c.compte + '</b></td><td class="n">' + l.c.hors +
+        '</td><td class="n">' + l.c.caillou + '</td><td class="n">' + valCls(l.x.v) + '</td><td class="n">' + valCls(l.x.p) + '</td><td class="n">' + valCls(l.x.pa) +
+        '</td><td class="n"><button class="retirer" data-retirer="' + esc(l.x.n) + '" title="Retirer de l\'alliance" aria-label="Retirer ' + esc(l.x.n) + '">✕</button></td></tr>';
+    });
+    h += "</tbody></table></div>";
+
+    h += "<h3>Villes</h3>" + htmlVilles(villes, SIM, true);
+    el.innerHTML = h;
+  }
+
+  $("simRech").addEventListener("input", simPropositions);
+  $("simRech").addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var b = $("simProps").querySelector("[data-ajout]");
+    if (b) { simAjouter([b.getAttribute("data-ajout")]); $("simRech").value = ""; simPropositions(); }
+  });
+  $("simProps").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-ajout]");
+    if (b) { simAjouter([b.getAttribute("data-ajout")]); $("simRech").focus(); }
+  });
+  (function () {
+    var opts = '<option value="">Ajouter tous les membres d\'une alliance…</option>';
+    (CLS.alliances || []).slice().sort(function (a, b) { return (a.rg || 1e9) - (b.rg || 1e9); }).forEach(function (a) {
+      opts += '<option value="' + esc(a.n) + '">' + esc(a.n) + " (" + (a.m || 0) + " membres)</option>";
+    });
+    $("simAll").innerHTML = opts;
+  })();
+  $("simAll").addEventListener("change", function (e) {
+    var n = e.target.value; e.target.value = "";
+    if (n) simAjouter((CLS.joueurs || []).filter(function (x) { return x.a === n; }).sort(function (a, b) { return (b.p || 0) - (a.p || 0); }).map(function (x) { return x.n; }));
+  });
+  $("simMax").addEventListener("change", function (e) {
+    SIM.max = Math.max(1, Math.round(+e.target.value) || MAX_DEF); SIM.msg = ""; simSauver(); simulateur();
+  });
+  $("simVider").addEventListener("click", function () {
+    if (SIM.noms.length && !confirm("Retirer les " + SIM.noms.length + " joueurs ?")) return;
+    SIM.noms = []; SIM.msg = ""; simSauver(); simPropositions(); simulateur();
+  });
+  $("simLien").addEventListener("click", function () {
+    var url = location.href.split("#")[0] + "#simulateur?j=" + encodeURIComponent(SIM.noms.join("\n")) + "&max=" + SIM.max;
+    var ok = function () { $("simLien").textContent = "Lien copié ✓"; setTimeout(function () { $("simLien").textContent = "Copier le lien"; }, 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(ok, function () { prompt("Lien à copier :", url); });
+    else prompt("Lien à copier :", url);
+  });
+  $("simCorps").addEventListener("click", function (e) {
+    var r = e.target.closest("[data-retirer]");
+    if (r) { var n = r.getAttribute("data-retirer"); SIM.noms = SIM.noms.filter(function (x) { return x !== n; }); SIM.msg = ""; simSauver(); simulateur(); return; }
+    var t = e.target.closest("th[data-tri]");
+    if (t && e.target.closest(".cls") && !e.target.closest("[data-retirer]")) {
+      var c = t.getAttribute("data-tri"); SIM.sens = SIM.tri === c ? -SIM.sens : 1; SIM.tri = c; simulateur(); return;
+    }
+    var fv = e.target.closest("[data-fv]");
+    if (fv) { SIM.filtre = fv.getAttribute("data-fv"); SIM.tout = false; simulateur(); return; }
+    if (e.target.closest("[data-fv-tout]")) { SIM.tout = true; simulateur(); return; }
+    if (e.target.closest("#simCarte")) { simCarte = true; jSel = null; selection = null; location.hash = "#domination"; }
+  });
+  // Lien partagé : #simulateur?j=nom1%0Anom2&max=60
+  function simDepuisLien(h) {
+    var q = h.split("?")[1];
+    if (!q) return;
+    var p = {};
+    q.split("&").forEach(function (s) { var i = s.indexOf("="); if (i > 0) p[s.slice(0, i)] = decodeURIComponent(s.slice(i + 1)); });
+    if (p.j != null) {
+      var noms = p.j.split("\n").filter(function (n) { return INFO_J.has(n); });
+      SIM.max = Math.max(+p.max || SIM.max, noms.length);
+      SIM.noms = noms; SIM.msg = ""; simSauver();
+    }
+    try { history.replaceState(null, "", "#simulateur"); } catch (e) { }
+  }
+
   $("mFermer").addEventListener("click", fermerJoueur);
   $("mVoile").addEventListener("click", fermerJoueur);
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("modal").hidden) fermerJoueur(); });
   $("mCorps").addEventListener("click", function (e) {
     var t = e.target.closest("th[data-tri]");
     if (t) {
-      var c = t.getAttribute("data-tri");
-      mj.sens = mj.tri === c ? -mj.sens : 1; mj.tri = c;
-      vueModal.tri = mj.tri; vueModal.sens = mj.sens;
-      rendreJoueur(); return;
+      var c = t.getAttribute("data-tri"), cur = vueModal.tri || (vueModal.k === "j" ? "d" : "zone");
+      vueModal.sens = cur === c ? -(vueModal.sens || 1) : 1; vueModal.tri = c;
+      rendreModal(); return;
     }
+    var fv = e.target.closest("[data-fv]");
+    if (fv) { vueModal.filtre = fv.getAttribute("data-fv"); vueModal.tout = false; rendreModal(); return; }
+    if (e.target.closest("[data-fv-tout]")) { vueModal.tout = true; rendreModal(); return; }
     if (e.target.closest("#mRetour")) { vueModal = pile.pop(); rendreModal(); return; }
     if (e.target.closest("#mCarteA")) {
       selection = vueModal.nom; fermerJoueur();
@@ -1025,14 +1329,13 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   // ---------- Navigation entre les pages
   function route() {
     var h = (location.hash || "#domination").slice(1);
-    if (h !== "classements" && h !== "comparer") h = "domination";
+    if (h.indexOf("simulateur") === 0) { simDepuisLien(h); h = "simulateur"; }
+    if (h !== "classements" && h !== "comparer" && h !== "simulateur") h = "domination";
     pageActive = h;
     if (h !== "domination") arreterRejeu();
-    $("page-domination").hidden = h !== "domination";
-    $("page-classements").hidden = h !== "classements";
-    $("page-comparer").hidden = h !== "comparer";
+    ["domination", "classements", "comparer", "simulateur"].forEach(function (p) { $("page-" + p).hidden = h !== p; });
     Array.prototype.forEach.call($("menu").children, function (a) { a.classList.toggle("actif", a.getAttribute("href") === "#" + h); });
-    if (h === "domination") { taille(); tout(); } else if (h === "comparer") comparer(); else classements();
+    if (h === "domination") { taille(); tout(); } else if (h === "comparer") comparer(); else if (h === "simulateur") { simPropositions(); simulateur(); } else classements();
   }
 
   // ---------- Démarrage
