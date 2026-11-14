@@ -1,0 +1,8 @@
+Package: grepostats
+Title: Statistiques de domination Grepolis
+Version: 0.1.0
+Description: Collecte quotidienne des données Grepolis et calcul de la domination.
+Imports:
+    dplyr,
+    yaml,
+    jsonlite

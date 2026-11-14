@@ -1,0 +1,10 @@
+.Rhistory
+.RData
+.Rproj.user/
+# Produits par la collecte (refaits à chaque fois, publiés par GitHub Pages)
+data/
+site/
+# Divers locaux
+*.lnk
+*.zip
+test-*.bat

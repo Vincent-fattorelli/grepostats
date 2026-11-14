@@ -1,0 +1,31 @@
+# Configuration de Grepostats
+# Pour changer de monde : modifie `id` (ex. fr171 -> fr180, en120, de95...)
+# ou ajoute un second bloc dans `mondes` pour suivre plusieurs mondes en parallèle.
+
+mondes:
+  - id: fr185
+    centre: [500, 500]
+    alliances_suivies: []
+    alliances_ennemies: []
+
+# Réglages communs à tous les mondes (modifiables aussi par monde en les
+# copiant dans le bloc du monde concerné)
+parametres:
+  # Types d'îles qui comptent pour la domination (repris de ton code d'origine :
+  # types 1 à 10 et 37 à 46). À vérifier / ajuster selon les règles du monde.
+  types_iles_domination: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46]
+
+  # Plage de rayons calculée pour les courbes (distance au centre, en cases)
+  rayon_min: 10
+  rayon_max: 150
+
+  # Rayons archivés dans l'historique à chaque collecte
+  # (on n'archive pas tous les rayons pour que le dépôt reste léger)
+  rayons_historique: [60, 80, 100, 120, 140]
+
+  # Nombre d'alliances (top N par rayon) archivées dans l'historique,
+  # en plus des alliances suivies
+  top_alliances_historique: 15
+
+  # Durée de conservation des conquêtes, en jours
+  conquetes_jours_max: 90
