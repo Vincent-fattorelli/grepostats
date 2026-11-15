@@ -96,6 +96,9 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
 .props{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
 .props button{display:inline-flex;gap:6px;align-items:center;font-size:13px}
 .alerte{padding:8px 10px;border-left:3px solid #d97706;background:var(--hover);border-radius:4px;margin:0 0 10px;font-size:13px}
+.emplacements{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin:4px 0 12px;max-width:420px}
+.empl{height:20px;border-radius:4px;border:1px solid rgba(0,0,0,.25)}
+.empl.libre{border:1.5px dashed #f97316;background:rgba(249,115,22,.12)}
 button[data-export]{background:#e8552d;border-color:#e8552d;color:#fff;font-weight:600}
 button[data-export]:hover{background:#d14520;border-color:#d14520}
 .retirer{border:0;background:none;color:var(--mut);padding:2px 6px}
@@ -131,6 +134,7 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
         <button data-v="villes" class="actif">Villes</button>
         <button data-v="zones">Zones d'influence</button>
       </div>
+      <label class="petit" title="Afficher ou masquer les points des villes"><input type="checkbox" id="voirVilles" checked> Points des villes</label>
       <label class="petit" title="Losanges orange : îles de domination où l'on peut encore fonder (le chiffre = places libres, visible en zoomant)"><input type="checkbox" id="voirLibres"> Emplacements libres</label>
       <span id="zoneCtl" hidden><label for="etendue">Étendue</label> <input type="range" id="etendue" min="4" max="30" value="12" style="min-width:90px;max-width:160px"></span>
     </div>
@@ -146,7 +150,7 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
       <div id="tip"></div>
     </div>
     <div class="legende" id="legende"></div>
-    <div class="aide mut">Molette ou boutons +/− pour zoomer, glisser pour déplacer. Cliquer sur une alliance (légende ou tableau) pour la mettre en avant. Seules les villes des îles de domination sont affichées. « Zones d'influence » colore chaque région selon l'alliance la plus présente (10 premières alliances ; en sélectionnant une alliance, on voit sa seule zone). Le bouton ⓘ à côté d'une alliance ouvre sa fiche.</div>
+    <div class="aide mut">Molette ou boutons +/− pour zoomer, glisser pour déplacer. Cliquer sur une ville ou un losange ouvre la fiche de l'île (villes et places libres). Pointillés : limites des mers. Cliquer sur une alliance (légende ou tableau) pour la mettre en avant. Seules les villes des îles de domination sont affichées. « Zones d'influence » colore chaque région selon l'alliance la plus présente (10 premières alliances ; en sélectionnant une alliance, on voit sa seule zone). Le bouton ⓘ à côté d'une alliance ouvre sa fiche.</div>
   </section>
 
   <section class="panneau">
@@ -310,7 +314,7 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
   function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
   // ---------- Zones d'influence (densité par alliance)
-  var mode = "villes", etendue = 12, zonesSale = true, Z = null, voirLibres = false;
+  var mode = "villes", etendue = 12, zonesSale = true, Z = null, voirLibres = false, voirVilles = true;
   var PAS = 4, NG = Math.ceil(1000 / PAS) + 1;
   var zoneImg = document.createElement("canvas"); zoneImg.width = NG; zoneImg.height = NG;
   function rgb(h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; }
@@ -356,6 +360,23 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
     // cercle du rayon maximum
     ctx.beginPath(); ctx.arc(cc[0], cc[1], M.rayon_max * vue.s, 0, 6.2832);
     ctx.setLineDash([4, 5]); ctx.lineWidth = 1; ctx.strokeStyle = css("--mut"); ctx.stroke(); ctx.setLineDash([]);
+    // Séparations des mers : une mer = un carré de 100 × 100 (mer 45 = x 400-499, y 500-599)
+    var hg = monde(0, 0), bdr = monde(W, W);
+    ctx.save();
+    ctx.setLineDash([3, 6]); ctx.lineWidth = 1; ctx.strokeStyle = css("--mut"); ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    for (var gx = Math.ceil(hg[0] / 100) * 100; gx <= bdr[0]; gx += 100) { var ex = ecran(gx, 0)[0]; ctx.moveTo(ex, 0); ctx.lineTo(ex, W); }
+    for (var gy = Math.ceil(hg[1] / 100) * 100; gy <= bdr[1]; gy += 100) { var ey = ecran(0, gy)[1]; ctx.moveTo(0, ey); ctx.lineTo(W, ey); }
+    ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 0.7; ctx.fillStyle = css("--mut");
+    ctx.font = (vue.s >= 3 ? "bold 13px" : "11px") + " system-ui, sans-serif"; ctx.textBaseline = "top";
+    for (var mx = Math.max(0, Math.floor(hg[0] / 100)); mx <= Math.min(9, Math.floor(bdr[0] / 100)); mx++) {
+      for (var my = Math.max(0, Math.floor(hg[1] / 100)); my <= Math.min(9, Math.floor(bdr[1] / 100)); my++) {
+        var coin = ecran(mx * 100, my * 100);
+        ctx.fillText("Mer " + mx + my, Math.max(coin[0], 0) + 5, Math.max(coin[1], 0) + 4);
+      }
+    }
+    ctx.restore();
     // centre
     ctx.strokeStyle = css("--mut"); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cc[0] - 6, cc[1]); ctx.lineTo(cc[0] + 6, cc[1]); ctx.moveTo(cc[0], cc[1] - 6); ctx.lineTo(cc[0], cc[1] + 6); ctx.stroke();
@@ -368,7 +389,7 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
       ctx.drawImage(zoneImg, o[0], o[1], tw, tw);
     }
     var rd = Math.max(1.6, Math.min(6, vue.s * 0.18)) * (zones ? 0.7 : 1);
-    for (var i = 0; i < V.length; i++) {
+    for (var i = 0; voirVilles && i < V.length; i++) {
       var v = V[i];
       var p = ecran(v.px, v.py);
       if (p[0] < -8 || p[1] < -8 || p[0] > W + 8 || p[1] > W + 8) continue;
@@ -447,44 +468,47 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
       vue.cx = drag.cx - dx / vue.s; vue.cy = drag.cy - dy / vue.s;
       tip.style.display = "none"; dessiner(); return;
     }
-    var m = monde(px, py), best = null, bd = Math.pow(9 / vue.s, 2);
-    for (var i = 0; i < V.length; i++) {
-      var dx2 = V[i].px - m[0], dy2 = V[i].py - m[1], dd = dx2 * dx2 + dy2 * dy2;
-      if (dd < bd) { bd = dd; best = V[i]; }
-    }
-    var ileProche = null;
-    if (voirLibres) {
-      var bi = bd;
-      for (var k2 = 0; k2 < ILES.length; k2++) {
-        var di = Math.pow(ILES[k2].x - m[0], 2) + Math.pow(ILES[k2].y - m[1], 2);
-        if (di < bi) { bi = di; ileProche = ILES[k2]; }
-      }
-      if (ileProche && best && Math.pow(best.px - m[0], 2) + Math.pow(best.py - m[1], 2) < bi) ileProche = null;
-    }
-    if (ileProche) {
-      tip.innerHTML = "<b>" + ileProche.l + " emplacement" + (ileProche.l > 1 ? "s" : "") + " libre" + (ileProche.l > 1 ? "s" : "") + "</b> sur 20<br><span class='mut'>Île " +
-        ileProche.x + ":" + ileProche.y + " · mer " + mer(ileProche) + " · distance " + fmt(ileProche.d, 1) + "</span>";
-      tip.style.display = "block";
-      tip.style.left = Math.min(px + 14, W - 200) + "px";
-      tip.style.top = (py + 14) + "px";
-    } else if (best) {
+    var c = viser(monde(px, py), 9);
+    if (c.ile) {
+      var il = c.ile;
+      tip.innerHTML = "<b>" + il.l + " emplacement" + (il.l > 1 ? "s" : "") + " libre" + (il.l > 1 ? "s" : "") + "</b> sur 20<br><span class='mut'>Île " +
+        il.x + ":" + il.y + " · mer " + mer(il) + " · distance " + fmt(il.d, 1) + "<br>Clic : voir l'île</span>";
+    } else if (c.ville) {
+      var best = c.ville;
       tip.innerHTML = "<b>" + esc(best.j) + "</b><br>" + pastille(best.a) + esc(best.a) +
         "<br><span class='mut'>Île " + best.x + ":" + best.y + " · distance " + fmt(best.d, 1) +
-        (best.p != null ? " · " + fmt(best.p) + " pts" : "") + "</span>";
+        (best.p != null ? " · " + fmt(best.p) + " pts" : "") + "<br>Clic : voir l'île</span>";
+    }
+    if (c.ile || c.ville) {
       tip.style.display = "block";
       tip.style.left = Math.min(px + 14, W - 200) + "px";
       tip.style.top = (py + 14) + "px";
     } else tip.style.display = "none";
   });
-  cv.addEventListener("pointerup", function (e) {
-    var d0 = drag; drag = null;
-    if (!d0 || d0.bouge) return;
-    var r = cv.getBoundingClientRect(), m = monde(e.clientX - r.left, e.clientY - r.top), best = null, bd = Math.pow(11 / vue.s, 2);
-    for (var i = 0; i < V.length; i++) {
-      var dx = V[i].px - m[0], dy = V[i].py - m[1], dd = dx * dx + dy * dy;
-      if (dd < bd) { bd = dd; best = V[i]; }
+  // Ce qui est sous le pointeur : la ville la plus proche (si les villes sont affichées)
+  // ou l'île à places libres la plus proche (si les losanges sont affichés).
+  function viser(m, pixels) {
+    var seuil = Math.pow(pixels / vue.s, 2), ville = null, ile = null, dv = seuil, di = seuil;
+    if (voirVilles) for (var i = 0; i < V.length; i++) {
+      var dd = Math.pow(V[i].px - m[0], 2) + Math.pow(V[i].py - m[1], 2);
+      if (dd < dv) { dv = dd; ville = V[i]; }
     }
-    if (best && best.j.charAt(0) !== "(") ouvrirJoueur(best.j);
+    if (voirLibres) for (var k = 0; k < ILES.length; k++) {
+      var d2 = Math.pow(ILES[k].x - m[0], 2) + Math.pow(ILES[k].y - m[1], 2);
+      if (d2 < di) { di = d2; ile = ILES[k]; }
+    }
+    if (ville && ile) { if (dv < di) ile = null; else ville = null; }
+    return { ville: ville, ile: ile };
+  }
+  // L'île s'ouvre sur « click » (et non au relâchement) : sinon, sur écran tactile, le clic qui suit
+  // le toucher tombe sur la fiche qui vient de s'ouvrir et active le lien placé à cet endroit.
+  var aGlisse = false;
+  cv.addEventListener("pointerup", function () { aGlisse = !!(drag && drag.bouge); drag = null; });
+  cv.addEventListener("click", function (e) {
+    if (aGlisse) return;
+    var r = cv.getBoundingClientRect(), c = viser(monde(e.clientX - r.left, e.clientY - r.top), 11);
+    var cible = c.ile || c.ville;
+    if (cible) { tip.style.display = "none"; ouvrirIle(cible.x + ":" + cible.y); }
   });
   cv.addEventListener("pointerleave", function () { tip.style.display = "none"; });
 
@@ -731,7 +755,15 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
   }
 
   // ---------- Emplacements de fondation libres sur les îles de domination
-  var ILES = (D.iles || []).sort(function (a, b) { return a.d - b.d; });
+  var ILES_TOUTES = (D.iles || []).sort(function (a, b) { return a.d - b.d; });
+  var ILES = ILES_TOUTES.filter(function (i) { return i.l > 0; });
+  var ILE_PAR_CLE = new Map(ILES_TOUTES.map(function (i) { return [i.x + ":" + i.y, i]; }));
+  var VILLES_PAR_ILE = new Map();
+  TOUTES.forEach(function (v) {
+    var k = v.x + ":" + v.y;
+    if (!VILLES_PAR_ILE.has(k)) VILLES_PAR_ILE.set(k, []);
+    VILLES_PAR_ILE.get(k).push(v);
+  });
   var LB = { tri: "d", sens: 1, cercle: true, tout: false, titreExport: "Emplacements libres" };
   function libres() {
     var dans = ILES.filter(function (i) { return i.d <= rayon; });
@@ -823,6 +855,7 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
     $("zoneCtl").hidden = mode !== "zones"; zonesSale = true; dessiner();
   });
   $("voirLibres").addEventListener("change", function (e) { voirLibres = e.target.checked; dessiner(); });
+  $("voirVilles").addEventListener("change", function (e) { voirVilles = e.target.checked; dessiner(); });
   $("etendue").addEventListener("input", function (e) { etendue = +e.target.value; zonesSale = true; dessiner(); });
   window.addEventListener("resize", function () { if (pageActive !== "domination") return; taille(); dessiner(); rendreOnglet(); });
 
@@ -1090,8 +1123,52 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
   function retourHtml() { return pile.length ? '<button id="mRetour">← Retour</button>' : ""; }
   function rendreModal() {
     if (vueModal.k === "j") { mj = { nom: vueModal.nom, tri: vueModal.tri || "d", sens: vueModal.sens || 1 }; rendreJoueur(); }
+    else if (vueModal.k === "i") rendreIle();
     else rendreAlliance();
   }
+
+  // ---------- Fiche d'une île : ses 20 emplacements, ses villes, ses places libres
+  function rendreIle() {
+    var cle = vueModal.nom, xy = cle.split(":"), x = +xy[0], y = +xy[1];
+    var ile = ILE_PAR_CLE.get(cle);
+    var villes = (VILLES_PAR_ILE.get(cle) || []).slice().sort(function (a, b) {
+      return a.a.localeCompare(b.a, "fr") || a.j.localeCompare(b.j, "fr") || (b.p || 0) - (a.p || 0);
+    });
+    var dom = ile ? true : villes.length ? villes[0].dom === 1 : false;
+    var dist = ile ? ile.d : villes.length ? villes[0].d : Math.sqrt(Math.pow(x - CENTRE[0], 2) + Math.pow(y - CENTRE[1], 2));
+    var libres = ile ? ile.l : dom ? Math.max(0, 20 - villes.length) : null;
+    var st = !dom ? "caillou" : dist <= rayon ? "compte" : "hors";
+    var h = retourHtml() + '<h2 id="mTitre">Île ' + x + ":" + y + "</h2>" +
+      '<div class="mut">Mer ' + mer({ x: x, y: y }) + " · distance " + fmt(dist, 1) + ' · <span class="badge ' + (st === "compte" ? "ok" : st) + '">' +
+      (st === "caillou" ? "Caillou : ne compte pas pour la domination" : st === "compte" ? "Île de domination, dans le rayon" : "Île de domination, hors rayon") + "</span></div>";
+    h += '<div class="chips"><span><b>' + villes.length + "</b> ville" + (villes.length > 1 ? "s" : "") + "</span>" +
+      (libres != null ? "<span><b>" + libres + "</b> emplacement" + (libres > 1 ? "s" : "") + " libre" + (libres > 1 ? "s" : "") + " sur 20</span>" : "");
+    h += "</div>";
+    var parAll = new Map();
+    villes.forEach(function (v) { parAll.set(v.a, (parAll.get(v.a) || 0) + 1); });
+    h += '<div class="legende" style="margin:0 0 8px">' + Array.from(parAll.entries()).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
+      return '<span style="cursor:default">' + pastille(e[0]) + lienA(e[0]) + "&nbsp;<b>" + e[1] + "</b></span>";
+    }).join("") + "</div>";
+    if (dom) {
+      // Les 20 emplacements : une case par ville (couleur de l'alliance), cases orange en pointillé = libres
+      h += '<div class="emplacements">';
+      villes.forEach(function (v) { h += '<span class="empl" style="background:' + col(v.a) + '" title="' + esc(v.n + " · " + v.j + " · " + v.a) + '"></span>'; });
+      for (var k = 0; k < (libres || 0); k++) h += '<span class="empl libre" title="Emplacement libre"></span>';
+      h += "</div>";
+    }
+    h += '<p style="margin:0 0 10px"><button id="mCentrerIle">Centrer la carte sur l\'île</button></p>';
+    if (!villes.length) { $("mCorps").innerHTML = h + '<p class="vide mut">Aucune ville sur cette île.</p>'; return; }
+    vueModal.titreExport = "Île " + x + ":" + y;
+    h += '<div style="margin:0 0 8px">' + boutonExport(villes, vueModal, "tous") + "</div>";
+    h += '<div style="overflow-x:auto"><table class="cls"><thead><tr><th>Ville</th><th>Joueur</th><th>Alliance</th><th class="n">Points</th><th>Ancien propriétaire</th></tr></thead><tbody>';
+    villes.forEach(function (v) {
+      var anc = v.o != null ? nomJ(v.o) + ' <span class="mut petit">(' + dateLongue(v.t) + ")</span>" : '<span class="mut">Fondée</span>';
+      h += "<tr><td>" + esc(v.n) + "</td><td>" + nomJ(v.j) + '</td><td><div class="nom">' + (v.j.charAt(0) === "(" ? '<span class="mut">–</span>' : pastille(v.a) + lienA(v.a)) +
+        '</div></td><td class="n">' + fmt(v.p || 0) + "</td><td>" + anc + "</td></tr>";
+    });
+    $("mCorps").innerHTML = h + "</tbody></table></div>";
+  }
+  function ouvrirIle(cle) { ouvrirModal("i", cle); }
   function ouvrirModal(k, nom) {
     if (rj.p !== EV.length) rejeuPresent();   // les fiches décrivent l'état actuel
     if (!$("modal").hidden && vueModal) pile.push(vueModal); else pile = [];
@@ -1457,6 +1534,11 @@ button[data-export]:hover{background:#d14520;border-color:#d14520}
     if (fv) { vueModal.filtre = fv.getAttribute("data-fv"); vueModal.tout = false; rendreModal(); return; }
     if (e.target.closest("[data-fv-tout]")) { vueModal.tout = true; rendreModal(); return; }
     if (e.target.closest("#mRetour")) { vueModal = pile.pop(); rendreModal(); return; }
+    if (e.target.closest("#mCentrerIle")) {
+      var xy = vueModal.nom.split(":").map(Number); fermerJoueur();
+      if (location.hash !== "#domination" && location.hash) location.hash = "#domination";
+      centrerSur(xy[0], xy[1], xy[0], xy[1]); return;
+    }
     if (e.target.closest("#mCarteA")) {
       selection = vueModal.nom; fermerJoueur();
       if (location.hash === "#domination" || !location.hash) tout(); else location.hash = "#domination";

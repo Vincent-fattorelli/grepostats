@@ -257,11 +257,11 @@ exporter_site <- function(d, villes, cfg_monde, horodatage, dossier_site) {
               v = Nb_villes_alliance, m = Nb_membres,
               pa = pc_all, ra = rg_all, pt = pc_att, rt = rg_att, pd = pc_def, rd = rg_def)
 
-  # Îles de domination (dans le rayon maximum) qui ont encore des emplacements de fondation libres.
+  # Îles de domination dans le rayon maximum, avec leurs emplacements de fondation libres (l).
   # Une île de domination a 20 emplacements : villes présentes + Empl_disp = 20.
   centre <- cfg_monde$centre
   iles_libres <- d$iles |>
-    filter(Type_ile %in% cfg_monde$types_iles_domination, Empl_disp > 0) |>
+    filter(Type_ile %in% cfg_monde$types_iles_domination) |>
     mutate(Distance = round(sqrt((CoordsX - centre[1])^2 + (CoordsY - centre[2])^2), 4)) |>
     filter(Distance <= cfg_monde$rayon_max) |>
     transmute(id = ID_Ile, x = CoordsX, y = CoordsY, l = Empl_disp, d = Distance)
