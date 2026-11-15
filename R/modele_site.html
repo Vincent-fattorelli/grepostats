@@ -152,11 +152,13 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
       <button data-tab="joueurs">Joueurs</button>
       <button data-tab="courbes">Courbes</button>
       <button data-tab="conquetes">Conquêtes</button>
+      <button data-tab="fantomes">Fantômes</button>
     </div>
     <div id="tab-alliances"></div>
     <div id="tab-joueurs" hidden></div>
     <div id="tab-courbes" hidden></div>
     <div id="tab-conquetes" hidden></div>
+    <div id="tab-fantomes" hidden></div>
   </section>
 </main>
 </div>
@@ -676,7 +678,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
 
   // ---------- Onglets et contrôles
   function afficherOnglet() {
-    ["alliances", "joueurs", "courbes", "conquetes"].forEach(function (t) { $("tab-" + t).hidden = t !== onglet; });
+    ["alliances", "joueurs", "courbes", "conquetes", "fantomes"].forEach(function (t) { $("tab-" + t).hidden = t !== onglet; });
     Array.prototype.forEach.call($("onglets").children, function (b) { b.classList.toggle("actif", b.getAttribute("data-tab") === onglet); });
   }
   $("onglets").addEventListener("click", function (e) {
@@ -687,8 +689,31 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     if (onglet === "alliances") tableauAlliances();
     else if (onglet === "joueurs") tableauJoueurs();
     else if (onglet === "courbes") courbes();
+    else if (onglet === "fantomes") fantomes();
     else conquetes();
   }
+
+  // ---------- Villes fantômes (sans joueur), triées par distance au centre
+  var FANTOME = "(ville fantôme)";
+  var FANTOMES = TOUTES.filter(function (v) { return v.j === FANTOME; });
+  var FT = { filtre: "compte", tri: "d", sens: 1 };
+  function fantomes() {
+    var n = compterStatuts(FANTOMES);
+    var h = '<p class="total mut"><b>' + fmt(n.compte) + "</b> villes fantômes dans le cercle de rayon " + rayon +
+      " (îles de domination) · " + fmt(FANTOMES.length) + " dans tout le monde. Cliquer sur une ville la montre sur la carte.</p>";
+    $("tab-fantomes").innerHTML = h + htmlVilles(FANTOMES, FT, false, true);
+  }
+  $("tab-fantomes").addEventListener("click", function (e) {
+    var t = e.target.closest("th[data-tri]");
+    if (t) { var c = t.getAttribute("data-tri"); FT.sens = FT.tri === c ? -FT.sens : 1; FT.tri = c; fantomes(); return; }
+    var fv = e.target.closest("[data-fv]");
+    if (fv) { FT.filtre = fv.getAttribute("data-fv"); FT.tout = false; fantomes(); return; }
+    if (e.target.closest("[data-fv-tout]")) { FT.tout = true; fantomes(); return; }
+    var tr = e.target.closest("tr[data-ville]");
+    if (!tr) return;
+    var id = +tr.getAttribute("data-ville"), v = BYID.get(id) || FANTOMES.filter(function (x) { return x.id === id; })[0];
+    if (v) centrerSur(v.x, v.y, v.px != null ? v.px : v.x, v.py != null ? v.py : v.y);
+  });
   function majChip() {
     var c = $("chipJ");
     c.hidden = !jSel && !simCarte;
@@ -787,6 +812,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
 
   // ---------- Fiche joueur
   function nomJ(n) {
+    if (n === "(ville fantôme)") return '<span class="lienj mut" data-fant="1" title="Voir la liste des villes fantômes">' + esc(n) + "</span>";
     return String(n).charAt(0) === "("
       ? '<span class="mut">' + esc(n) + "</span>"
       : '<span class="lienj" data-j="' + esc(n) + '">' + esc(n) + "</span>";
@@ -847,7 +873,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   // Tableau de villes avec filtres (toutes / comptent / hors rayon / cailloux / inutiles) et tri par colonne.
   // `et` porte l'état : { tri, sens, filtre }. Les clics sont gérés par le conteneur (data-tri, data-fv).
   var MAX_LIGNES_VILLES = 50;
-  function htmlVilles(villes, et, avecJoueur) {
+  function htmlVilles(villes, et, avecJoueur, cliquable) {
     var n = compterStatuts(villes), filtre = et.filtre || "tous";
     var liste = villes.filter(function (v) {
       var s = statut(v);
@@ -870,7 +896,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
       th("Position", "pos", 1) + th("Mer", "mer", 1) + th("Points", "p", 1) + th("Distance", "d", 1) + th("Statut", "zone") + "</tr></thead><tbody>";
     var limite = et.tout ? Infinity : MAX_LIGNES_VILLES;
     trier(liste, tri, sens).slice(0, limite).forEach(function (v) {
-      h += "<tr><td>" + esc(v.n) + "</td>" + (avecJoueur ? "<td>" + nomJ(v.j) + "</td>" : "") + '<td class="n">' + v.x + ":" + v.y +
+      h += (cliquable ? '<tr data-ville="' + v.id + '" style="cursor:pointer">' : "<tr>") + "<td>" + esc(v.n) + "</td>" + (avecJoueur ? "<td>" + nomJ(v.j) + "</td>" : "") + '<td class="n">' + v.x + ":" + v.y +
         '</td><td class="n">' + mer(v) + '</td><td class="n">' + fmt(v.p || 0) + '</td><td class="n">' + fmt(v.d, 1) + "</td><td>" + badgeStatut(v) + "</td></tr>";
     });
     h += "</tbody></table></div>";
@@ -1320,6 +1346,13 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   document.addEventListener("click", function (e) {
     var a = e.target.closest("[data-fa]");
     if (a) { e.stopPropagation(); ouvrirAlliance(a.getAttribute("data-fa")); return; }
+    if (e.target.closest("[data-fant]")) {
+      e.stopPropagation();
+      if (!$("modal").hidden) fermerJoueur();
+      onglet = "fantomes"; afficherOnglet();
+      if (location.hash === "#domination" || !location.hash) rendreOnglet(); else location.hash = "#domination";
+      return;
+    }
     var el = e.target.closest("[data-j]");
     if (!el) return;
     e.stopPropagation();

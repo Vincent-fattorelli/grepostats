@@ -203,8 +203,8 @@ exporter_site <- function(d, villes, cfg_monde, horodatage, dossier_site) {
     transmute(i = ID_ville, t = Horodatage, x = CoordsX, y = CoordsY, d = Distance,
               oj = oj, oa = alold, nj = nj, na = alnew, p = Points_ville)
 
-  # Toutes les villes à exporter : celles de domination dans le rayon maximum,
-  # plus toutes les villes de joueurs (pour la fiche joueur). Pour chacune, dernière
+  # Toutes les villes du monde sont exportées : de joueurs (fiche joueur), fantômes
+  # (leur liste, y compris sur les cailloux) et de domination. Pour chacune, dernière
   # prise connue (ancien propriétaire, date), seulement si le nouveau propriétaire
   # de la conquête est bien le propriétaire actuel.
   derniere <- conq |>
@@ -221,7 +221,6 @@ exporter_site <- function(d, villes, cfg_monde, horodatage, dossier_site) {
     select(ID_ville, ID_nouveau = ID_joueur_nouveau, o_nom = oj, o_all = alold, o_t = Horodatage)
 
   v <- villes |>
-    filter((Domination %in% TRUE & Distance <= cfg_monde$rayon_max) | !is.na(ID_joueur)) |>
     left_join(derniere, by = "ID_ville") |>
     mutate(ok = (!is.na(ID_nouveau) & !is.na(ID_joueur) & ID_nouveau == ID_joueur) %in% TRUE) |>
     transmute(id = ID_ville, n = Nom_ville, x = CoordsX, y = CoordsY,
