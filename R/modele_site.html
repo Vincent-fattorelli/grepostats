@@ -696,7 +696,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   // ---------- Villes fantômes (sans joueur), triées par distance au centre
   var FANTOME = "(ville fantôme)";
   var FANTOMES = TOUTES.filter(function (v) { return v.j === FANTOME; });
-  var FT = { filtre: "compte", tri: "d", sens: 1 };
+  var FT = { filtre: "compte", tri: "d", sens: 1, titreExport: "Villes fantômes" };
   function fantomes() {
     var n = compterStatuts(FANTOMES);
     var h = '<p class="total mut"><b>' + fmt(n.compte) + "</b> villes fantômes dans le cercle de rayon " + rayon +
@@ -704,6 +704,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     $("tab-fantomes").innerHTML = h + htmlVilles(FANTOMES, FT, false, true);
   }
   $("tab-fantomes").addEventListener("click", function (e) {
+    if (clicExport(e, FT, fantomes)) return;
     var t = e.target.closest("th[data-tri]");
     if (t) { var c = t.getAttribute("data-tri"); FT.sens = FT.tri === c ? -FT.sens : 1; FT.tri = c; fantomes(); return; }
     var fv = e.target.closest("[data-fv]");
@@ -870,6 +871,57 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     PAR_ALLIANCE.get(v.a).push(v);
   });
 
+  // ---------- Export BB code (Grepolis) : [town]id[/town] devient un lien vers la ville dans le jeu.
+  var NOMS_FILTRES = { tous: "toutes", compte: "qui comptent", hors: "hors rayon", caillou: "sur cailloux", inutiles: "inutiles" };
+  function bbCode(villes, fmtBB, avecJoueur, titre) {
+    function nb(x) { return x == null ? "" : String(Math.round(x)); }
+    function dist(x) { return (Math.round(x * 10) / 10).toFixed(1).replace(".", ","); }
+    var lignes = ["[b]" + titre + "[/b]"];
+    if (fmtBB === "tableau") {
+      lignes.push("[table]");
+      lignes.push("[**]Ville" + (avecJoueur ? "[||]Joueur" : "") + "[||]Position[||]Points[||]Distance[||]Statut[/**]");
+      villes.forEach(function (v) {
+        lignes.push("[*][town]" + v.id + "[/town]" + (avecJoueur ? "[|]" + (v.j.charAt(0) === "(" ? v.j : "[player]" + v.j + "[/player]") : "") +
+          "[|]" + v.x + ":" + v.y + "[|]" + nb(v.p) + "[|]" + dist(v.d) + "[|]" + STATUTS[statut(v)] + "[/*]");
+      });
+      lignes.push("[/table]");
+    } else {
+      villes.forEach(function (v) {
+        lignes.push("[town]" + v.id + "[/town]" + (avecJoueur && v.j.charAt(0) !== "(" ? " - [player]" + v.j + "[/player]" : "") +
+          " (" + v.x + ":" + v.y + ", " + nb(v.p) + " pts, distance " + dist(v.d) + ") " + STATUTS[statut(v)]);
+      });
+    }
+    return lignes.join("\n");
+  }
+  function blocExport(villes, et, avecJoueur, filtre) {
+    var fmtBB = et.bbfmt || "liste";
+    var titre = (et.titreExport || "Villes") + " : " + villes.length + " ville" + (villes.length > 1 ? "s" : "") +
+      (filtre !== "tous" ? " " + NOMS_FILTRES[filtre] : "") + " (rayon " + rayon + ")";
+    var h = '<div class="rejeu" style="margin:0 0 10px"><div class="controles" style="margin-bottom:6px"><div class="seg">' +
+      '<button data-bbfmt="liste" class="' + (fmtBB === "liste" ? "actif" : "") + '">Liste</button>' +
+      '<button data-bbfmt="tableau" class="' + (fmtBB === "tableau" ? "actif" : "") + '">Tableau</button></div>' +
+      '<button data-copier="1">Copier</button><span class="mut petit">' + villes.length + " villes : celles du filtre choisi, dans l'ordre du tri.</span></div>" +
+      '<textarea readonly rows="6" style="width:100%;font:12px ui-monospace,Consolas,monospace;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px">' +
+      esc(bbCode(villes, fmtBB, avecJoueur, titre)) + "</textarea>" +
+      (villes.length > 100 ? '<p class="mut petit" style="margin:4px 0 0">Longue liste : les messages du jeu ont une taille limitée, tu devras peut-être la découper.</p>' : "") + "</div>";
+    return h;
+  }
+  // Clics communs aux listes de villes (export) ; renvoie true si le clic a été traité.
+  function clicExport(e, et, rendre) {
+    if (e.target.closest("[data-export]")) { et.exporter = !et.exporter; rendre(); return true; }
+    var f = e.target.closest("[data-bbfmt]");
+    if (f) { et.bbfmt = f.getAttribute("data-bbfmt"); rendre(); return true; }
+    var c = e.target.closest("[data-copier]");
+    if (c) {
+      var zone = c.closest(".rejeu").querySelector("textarea");
+      var ok = function () { c.textContent = "Copié ✓"; setTimeout(function () { c.textContent = "Copier"; }, 1800); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(zone.value).then(ok, function () { zone.select(); document.execCommand("copy"); ok(); });
+      else { zone.select(); document.execCommand("copy"); ok(); }
+      return true;
+    }
+    return false;
+  }
+
   // Tableau de villes avec filtres (toutes / comptent / hors rayon / cailloux / inutiles) et tri par colonne.
   // `et` porte l'état : { tri, sens, filtre }. Les clics sont gérés par le conteneur (data-tri, data-fv).
   var MAX_LIGNES_VILLES = 50;
@@ -883,7 +935,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     [["tous", "Toutes"], ["compte", "Comptent"], ["hors", "Hors rayon"], ["caillou", "Cailloux"], ["inutiles", "Inutiles"]].forEach(function (f) {
       h += '<button data-fv="' + f[0] + '" class="' + (filtre === f[0] ? "actif" : "") + '">' + f[1] + " <small>" + fmt(n[f[0]]) + "</small></button>";
     });
-    h += "</div>";
+    h += '</div> <button data-export="1" class="petit" title="Copier la liste en BB code, pour un message ou le forum du jeu">' + (et.exporter ? "Fermer l'export" : "Exporter (BB code)") + "</button>";
     if (filtre === "inutiles" || filtre === "caillou") h += '<p class="mut petit" style="margin:0 0 8px">' + (filtre === "caillou"
       ? "Cailloux : villes sur un type d'île qui ne compte jamais pour la domination, même au centre de la carte."
       : "Inutiles : villes qui ne comptent pas pour la domination au rayon de " + rayon + " (hors rayon ou sur un caillou).") + "</p>";
@@ -895,7 +947,9 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     h += '<div style="overflow-x:auto"><table class="cls"><thead><tr>' + th("Ville", "n") + (avecJoueur ? th("Joueur", "j") : "") +
       th("Position", "pos", 1) + th("Mer", "mer", 1) + th("Points", "p", 1) + th("Distance", "d", 1) + th("Statut", "zone") + "</tr></thead><tbody>";
     var limite = et.tout ? Infinity : MAX_LIGNES_VILLES;
-    trier(liste, tri, sens).slice(0, limite).forEach(function (v) {
+    var triees = trier(liste, tri, sens);
+    if (et.exporter) h += blocExport(triees, et, avecJoueur, filtre);
+    triees.slice(0, limite).forEach(function (v) {
       h += (cliquable ? '<tr data-ville="' + v.id + '" style="cursor:pointer">' : "<tr>") + "<td>" + esc(v.n) + "</td>" + (avecJoueur ? "<td>" + nomJ(v.j) + "</td>" : "") + '<td class="n">' + v.x + ":" + v.y +
         '</td><td class="n">' + mer(v) + '</td><td class="n">' + fmt(v.p || 0) + '</td><td class="n">' + fmt(v.d, 1) + "</td><td>" + badgeStatut(v) + "</td></tr>";
     });
@@ -940,6 +994,9 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     if (nDom) h += '<p style="margin:0 0 12px"><button id="mCarte">Voir ses villes de domination sur la carte</button></p>';
 
     if (!villes.length) { $("mCorps").innerHTML = h + '<p class="vide mut">Aucune ville.</p>'; return; }
+    vueModal.titreExport = "Villes de " + nom;
+    h += '<p style="margin:0 0 8px"><button data-export="1" class="petit">' + (vueModal.exporter ? "Fermer l'export" : "Exporter (BB code)") + "</button></p>";
+    if (vueModal.exporter) h += blocExport(trier(villes, mj.tri, mj.sens), vueModal, false, "tous");
     function th(lib, cle, num) {
       return '<th data-tri="' + cle + '" class="' + (num ? "n" : "") + '">' + lib + (mj.tri === cle ? (mj.sens > 0 ? " ▲" : " ▼") : "") + "</th>";
     }
@@ -1025,6 +1082,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
       h += "</tbody></table></div>";
     }
     h += "<h3>Villes <span class='mut petit'>(" + fmt(ns.compte) + " comptent · " + fmt(ns.hors) + " hors rayon · " + fmt(ns.caillou) + " sur cailloux)</span></h3>";
+    vueModal.titreExport = "Villes de " + nom;
     h += htmlVilles(villesA, vueModal, true);
     $("mCorps").innerHTML = h;
   }
@@ -1118,7 +1176,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   var SIMK = "\u0000sim", SIM_NOM = "Ton alliance", SIM_COL = "#e11d48";
   var MAX_DEF = Math.max.apply(null, (CLS.alliances || []).map(function (a) { return a.m || 0; }).concat([1]));
   var CLE_SIM = "grepostats-sim-" + M.monde;
-  var SIM = { noms: [], max: MAX_DEF, tri: "zone", sens: 1, filtre: "tous", msg: "" };
+  var SIM = { noms: [], max: MAX_DEF, tri: "zone", sens: 1, filtre: "tous", msg: "", titreExport: "Villes de l'alliance simulée" };
   var simCarte = false;
   try {
     var simLu = JSON.parse(localStorage.getItem(CLE_SIM) || "null");
@@ -1288,6 +1346,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
     else prompt("Lien à copier :", url);
   });
   $("simCorps").addEventListener("click", function (e) {
+    if (clicExport(e, SIM, simulateur)) return;
     var r = e.target.closest("[data-retirer]");
     if (r) { var n = r.getAttribute("data-retirer"); SIM.noms = SIM.noms.filter(function (x) { return x !== n; }); SIM.msg = ""; simSauver(); simulateur(); return; }
     var t = e.target.closest("th[data-tri]");
@@ -1317,6 +1376,7 @@ select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background
   $("mVoile").addEventListener("click", fermerJoueur);
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("modal").hidden) fermerJoueur(); });
   $("mCorps").addEventListener("click", function (e) {
+    if (vueModal && clicExport(e, vueModal, rendreModal)) return;
     var t = e.target.closest("th[data-tri]");
     if (t) {
       var c = t.getAttribute("data-tri"), cur = vueModal.tri || (vueModal.k === "j" ? "d" : "zone");
